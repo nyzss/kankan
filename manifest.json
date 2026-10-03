@@ -1,0 +1,9 @@
+{
+	"id": "kankan",
+	"name": "Kankan",
+	"version": "1.0.0",
+	"minAppVersion": "1.7.2",
+	"description": "Simple kanban boards stored as markdown files.",
+	"author": "Okan KOCA",
+	"isDesktopOnly": false
+}

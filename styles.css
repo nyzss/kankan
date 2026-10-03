@@ -1,0 +1,129 @@
+.kankan {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.kankan-toolbar {
+	display: flex;
+	gap: var(--size-4-2);
+}
+
+.kankan-toolbar input {
+	flex: 1;
+	max-width: 240px;
+}
+
+.kankan-board {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-3);
+	overflow-x: auto;
+	flex: 1;
+	padding-bottom: var(--size-4-2);
+}
+
+.kankan-column {
+	flex: 0 0 270px;
+	display: flex;
+	flex-direction: column;
+	background: var(--background-secondary);
+	border-radius: var(--radius-m);
+	padding: var(--size-4-2);
+	max-height: 100%;
+}
+
+.kankan-column.is-collapsed {
+	flex-basis: auto;
+	opacity: 0.7;
+}
+
+.kankan-column-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	cursor: grab;
+	font-weight: var(--font-semibold);
+	padding-bottom: var(--size-4-2);
+}
+
+.kankan-column.is-collapsed .kankan-column-header {
+	padding-bottom: 0;
+}
+
+.kankan-column-title {
+	flex: 1;
+}
+
+.kankan-count {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.kankan-cards {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	min-height: 40px;
+	overflow-y: auto;
+}
+
+.kankan-card {
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	padding: var(--size-4-2) var(--size-4-3);
+	cursor: pointer;
+}
+
+.kankan-card:hover {
+	border-color: var(--interactive-accent);
+}
+
+.kankan-card.is-dragging {
+	opacity: 0.4;
+}
+
+.kankan-hidden {
+	display: none;
+}
+
+.kankan-card-desc {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+	margin-top: var(--size-4-1);
+}
+
+.kankan-tags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+	margin-top: var(--size-4-2);
+}
+
+.kankan-tag {
+	font-size: var(--font-ui-smaller);
+	color: var(--tag-color);
+	background: var(--tag-background);
+	border-radius: var(--tag-radius);
+	padding: 0 var(--size-4-2);
+}
+
+.kankan-add {
+	color: var(--text-muted);
+	cursor: pointer;
+	padding: var(--size-4-2) var(--size-4-1) 0;
+}
+
+.kankan-add:hover {
+	color: var(--text-normal);
+}
+
+.kankan-wide {
+	width: 100%;
+}
