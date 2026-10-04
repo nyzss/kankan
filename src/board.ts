@@ -1,4 +1,4 @@
-// Board <-> markdown. Format:
+// Board files use this Markdown format:
 //
 // ---
 // kankan: board
@@ -74,7 +74,7 @@ export function parse(text: string): Board {
 			};
 			col.cards.push(card);
 		} else if (card && /^\s+\S/.test(line)) {
-			// ponytail: blank lines inside a description are dropped; keep them if anyone writes multi-paragraph cards
+			// Blank lines in descriptions are dropped. Keep them if a card has multiple paragraphs.
 			card.desc += (card.desc ? '\n' : '') + line.trim();
 		}
 	}

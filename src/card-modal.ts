@@ -6,7 +6,7 @@ export interface CardResult {
 	column: number;
 }
 
-// Stable per-tag hue so a tag looks the same everywhere.
+// Give each tag a stable hue so it looks the same across the board.
 export function tagHue(tag: string): number {
 	let h = 0;
 	for (const ch of tag.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) % 360;
@@ -20,10 +20,10 @@ export function renderTagPill(parent: HTMLElement, tag: string): HTMLElement {
 }
 
 const cleanTag = (s: string) => s.trim().replace(/^#/, '').replace(/[\s,#]+/g, '-');
-// Brackets and # would break the `[project:: X]` field / tag parsing.
+// Remove brackets and # so they do not break the `[project:: X]` field or tag parsing.
 const cleanProject = (s: string) => s.replace(/[[\]#]/g, '').trim();
 
-// Suggests existing values, plus the typed text as a "Create …" entry.
+// Suggest existing values and offer the typed text as a "Create …" entry.
 class ValueSuggest extends AbstractInputSuggest<string> {
 	constructor(
 		app: App,
@@ -190,8 +190,8 @@ export class CardModal extends Modal {
 				input.value = '';
 			},
 		);
-		// Enter goes through the suggester (it always offers the typed text);
-		// comma/space commit directly, backspace on empty removes the last pill.
+		// Enter uses the suggester, which always offers the typed text.
+		// Comma or space saves the value. Backspace on an empty input removes the last pill.
 		input.addEventListener('keydown', (e) => {
 			if ((e.key === ',' || e.key === ' ') && input.value.trim()) {
 				e.preventDefault();

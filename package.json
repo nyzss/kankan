@@ -1,7 +1,7 @@
 {
-	"name": "obsidian-sample-plugin",
+	"name": "kankan",
 	"version": "1.0.0",
-	"description": "This is a sample plugin for Obsidian (https://obsidian.md)",
+	"description": "Simple kanban boards stored as markdown files in Obsidian.",
 	"main": "main.js",
 	"type": "module",
 	"scripts": {
@@ -23,5 +23,6 @@
 		"obsidian": "latest",
 		"typescript": "^5.8.3",
 		"typescript-eslint": "^8.59.1"
-	}
+	},
+	"author": "Okan KOCA"
 }

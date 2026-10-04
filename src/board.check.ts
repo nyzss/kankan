@@ -1,4 +1,5 @@
-// Run: npx esbuild src/board.check.ts --bundle --platform=node | node   (silent = pass)
+// Run this command to check the board parser. No output means it passed:
+// npx esbuild src/board.check.ts --bundle --platform=node | node
 import { DEFAULT_BOARD, parse, serialize } from './board';
 
 const assert = (ok: boolean, msg: string) => { if (!ok) throw new Error(msg); };

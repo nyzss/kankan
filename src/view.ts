@@ -2,7 +2,7 @@ import { Menu, TextFileView, WorkspaceLeaf, setIcon } from 'obsidian';
 import { Board, Card, parse, serialize } from './board';
 import { CardModal, renderTagPill, tagHue } from './card-modal';
 
-// [hue, saturation%] for well-known column names; anything else gets a hue from its name.
+// Known column names use these [hue, saturation%] values. Other names get a hue from the name.
 const COLUMN_COLORS: Record<string, [number, number]> = {
 	backlog: [220, 0],
 	todo: [210, 75],
@@ -104,7 +104,7 @@ export class BoardView extends TextFileView {
 			if (target !== -1) this.editCard(target, -1);
 		};
 
-		// Tags offered for filtering are scoped to the selected project.
+		// Show only tags from the selected project in the filter.
 		const tags = this.boardTags(this.inProject.bind(this));
 		for (const t of this.selectedTags) if (!tags.includes(t)) this.selectedTags.delete(t);
 		if (tags.length) {
@@ -148,8 +148,8 @@ export class BoardView extends TextFileView {
 		this.render();
 	}
 
-	// Card shows if it's in the selected project, its title matches the search,
-	// and it has any of the selected tags.
+	// Show a card if it belongs to the selected project, matches the search,
+	// and has at least one selected tag.
 	private applyFilter() {
 		this.contentEl.querySelectorAll<HTMLElement>('.kankan-card').forEach((el) => {
 			const tags = (el.dataset.tags ?? '').split(' ');
@@ -169,7 +169,7 @@ export class BoardView extends TextFileView {
 		colEl.style.setProperty('--kankan-col-hue', String(hue));
 		colEl.style.setProperty('--kankan-col-sat', `${sat}%`);
 
-		// Column reordering: drop a dragged column onto another one.
+		// Drop a dragged column onto another column to change the order.
 		colEl.addEventListener('dragover', (e) => {
 			if (this.drag?.kind === 'col') e.preventDefault();
 		});
@@ -259,7 +259,7 @@ export class BoardView extends TextFileView {
 		}
 	}
 
-	// Index (in the full list) of the first visible card below the pointer.
+	// Return the position of the first visible card below the pointer in the full list.
 	private dropIndex(list: HTMLElement, y: number): number {
 		const cards = Array.from(list.querySelectorAll<HTMLElement>('.kankan-card'));
 		const i = cards.findIndex((c) => {
