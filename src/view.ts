@@ -1,6 +1,6 @@
 import { Menu, TextFileView, WorkspaceLeaf, setIcon } from 'obsidian';
 import { Board, Card, parse, serialize } from './board';
-import { CardModal } from './card-modal';
+import { CardModal, renderTagPill } from './card-modal';
 
 export const VIEW_TYPE = 'kankan-board';
 
@@ -161,7 +161,7 @@ export class BoardView extends TextFileView {
 		if (card.tags.length) {
 			const tags = el.createDiv('kankan-tags');
 			for (const t of card.tags) {
-				const chip = tags.createSpan({ cls: 'kankan-tag', text: '#' + t });
+				const chip = renderTagPill(tags, t);
 				chip.onclick = (e) => {
 					e.stopPropagation();
 					this.filter = t.toLowerCase();
@@ -200,6 +200,7 @@ export class BoardView extends TextFileView {
 			card,
 			ci,
 			this.board.columns.map((c) => c.name),
+			[...new Set(this.board.columns.flatMap((c) => c.cards.flatMap((k) => k.tags)))].sort(),
 			({ card: result, column }) => {
 				if (!isNew) this.board.columns[ci]!.cards.splice(idx, 1);
 				if (result) this.board.columns[column]!.cards.splice(

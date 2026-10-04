@@ -1,10 +1,10 @@
-import { MarkdownView, Plugin, TFile, WorkspaceLeaf } from 'obsidian';
+import { Plugin, TFile, ViewState, WorkspaceLeaf } from 'obsidian';
 import { DEFAULT_BOARD, FRONTMATTER_KEY } from './board';
 import { BoardView, VIEW_TYPE } from './view';
 
 export default class KankanPlugin extends Plugin {
-	// Files the user explicitly switched to markdown; don't bounce them back to the board.
-	private asMarkdown = new Set<string>();
+	// Leaves the user explicitly switched to markdown, with the file they did it for.
+	private asMarkdown = new WeakMap<WorkspaceLeaf, string>();
 
 	async onload() {
 		this.registerView(
@@ -12,7 +12,7 @@ export default class KankanPlugin extends Plugin {
 			(leaf) =>
 				new BoardView(leaf, (view) => {
 					if (!view.file) return;
-					this.asMarkdown.add(view.file.path);
+					this.asMarkdown.set(view.leaf, view.file.path);
 					void view.leaf.setViewState({
 						type: 'markdown',
 						state: { file: view.file.path },
@@ -20,14 +20,23 @@ export default class KankanPlugin extends Plugin {
 				}),
 		);
 
-		this.registerEvent(
-			this.app.workspace.on('file-open', (file) => {
-				const leaf = this.app.workspace.getActiveViewOfType(MarkdownView)?.leaf;
-				if (file && leaf && this.isBoard(file) && !this.asMarkdown.has(file.path)) {
-					void this.openAsBoard(leaf, file);
-				}
-			}),
-		);
+		// Every way of opening a file (explorer, links, quick switcher, history)
+		// goes through setViewState, so swap markdown -> board right there.
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- invoked via .call(this) below and restored on unload
+		const original = WorkspaceLeaf.prototype.setViewState;
+		const toBoard = (leaf: WorkspaceLeaf, state: ViewState): ViewState => {
+			const path = state.state?.file;
+			if (state.type !== 'markdown' || typeof path !== 'string') return state;
+			if (this.asMarkdown.get(leaf) === path) return state;
+			const file = this.app.vault.getFileByPath(path);
+			return file && this.isBoard(file) ? { ...state, type: VIEW_TYPE } : state;
+		};
+		WorkspaceLeaf.prototype.setViewState = function (state, eState) {
+			return original.call(this, toBoard(this, state), eState);
+		};
+		this.register(() => {
+			WorkspaceLeaf.prototype.setViewState = original;
+		});
 
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file, _source, leaf) => {
@@ -57,7 +66,7 @@ export default class KankanPlugin extends Plugin {
 	}
 
 	private async openAsBoard(leaf: WorkspaceLeaf, file: TFile) {
-		this.asMarkdown.delete(file.path);
+		this.asMarkdown.delete(leaf);
 		await leaf.setViewState({ type: VIEW_TYPE, state: { file: file.path } });
 	}
 
