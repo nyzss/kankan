@@ -5,7 +5,7 @@
 // ---
 //
 // ## Todo
-// - Card title #work #urgent
+// - Card title [project:: Website] #work #urgent
 //   Description lines, indented.
 //
 // ## Archive %% collapsed %%
@@ -14,6 +14,7 @@ export interface Card {
 	title: string;
 	desc: string;
 	tags: string[];
+	project: string; // '' = no project
 }
 
 export interface Column {
@@ -29,6 +30,7 @@ export interface Board {
 export const FRONTMATTER_KEY = 'kankan';
 const COLLAPSED = '%% collapsed %%';
 const TAG_RE = /(^|\s)#([^\s#]+)/g;
+const PROJECT_RE = /\[project::\s*([^\]]*)\]/;
 
 export const DEFAULT_BOARD = serialize({
 	columns: [
@@ -65,9 +67,10 @@ export function parse(text: string): Board {
 			const raw = item[1] ?? '';
 			const tags = [...raw.matchAll(TAG_RE)].map((m) => m[2] ?? '');
 			card = {
-				title: raw.replace(TAG_RE, '').trim(),
+				title: raw.replace(TAG_RE, '').replace(PROJECT_RE, '').trim(),
 				desc: '',
 				tags,
+				project: raw.match(PROJECT_RE)?.[1]?.trim() ?? '',
 			};
 			col.cards.push(card);
 		} else if (card && /^\s+\S/.test(line)) {
@@ -84,7 +87,8 @@ export function serialize(board: Board): string {
 		out.push(`## ${col.name}${col.collapsed ? ' ' + COLLAPSED : ''}`);
 		for (const c of col.cards) {
 			const tags = c.tags.map((t) => ' #' + t).join('');
-			out.push(`- ${c.title}${tags}`);
+			const project = c.project ? ` [project:: ${c.project}]` : '';
+			out.push(`- ${c.title}${project}${tags}`);
 			for (const d of c.desc.split('\n').filter((l) => l.trim())) {
 				out.push('  ' + d.trim());
 			}

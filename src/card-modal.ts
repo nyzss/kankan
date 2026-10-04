@@ -20,33 +20,37 @@ export function renderTagPill(parent: HTMLElement, tag: string): HTMLElement {
 }
 
 const cleanTag = (s: string) => s.trim().replace(/^#/, '').replace(/[\s,#]+/g, '-');
+// Brackets and # would break the `[project:: X]` field / tag parsing.
+const cleanProject = (s: string) => s.replace(/[[\]#]/g, '').trim();
 
-class TagSuggest extends AbstractInputSuggest<string> {
+// Suggests existing values, plus the typed text as a "Create …" entry.
+class ValueSuggest extends AbstractInputSuggest<string> {
 	constructor(
 		app: App,
-		private input: HTMLInputElement,
+		input: HTMLInputElement,
 		private available: () => string[],
-		private onPick: (tag: string) => void,
+		private clean: (s: string) => string,
+		private renderValue: (el: HTMLElement, v: string) => void,
+		private onPick: (v: string) => void,
 	) {
 		super(app, input);
 	}
 
 	getSuggestions(query: string): string[] {
-		const q = cleanTag(query).toLowerCase();
-		const tags = this.available();
-		const matches = tags.filter((t) => t.toLowerCase().includes(q));
-		if (q && !tags.some((t) => t.toLowerCase() === q)) matches.push(cleanTag(query));
+		const q = this.clean(query).toLowerCase();
+		const values = this.available();
+		const matches = values.filter((v) => v.toLowerCase().includes(q));
+		if (q && !values.some((v) => v.toLowerCase() === q)) matches.push(this.clean(query));
 		return matches;
 	}
 
-	renderSuggestion(tag: string, el: HTMLElement) {
-		if (!this.available().includes(tag)) el.createSpan({ text: 'Create ', cls: 'kankan-muted' });
-		renderTagPill(el, tag);
+	renderSuggestion(v: string, el: HTMLElement) {
+		if (!this.available().includes(v)) el.createSpan({ text: 'Create ', cls: 'kankan-muted' });
+		this.renderValue(el, v);
 	}
 
-	selectSuggestion(tag: string) {
-		this.onPick(tag);
-		this.input.value = '';
+	selectSuggestion(v: string) {
+		this.onPick(v);
 		this.close();
 	}
 }
@@ -61,6 +65,7 @@ export class CardModal extends Modal {
 		private column: number,
 		private columns: string[],
 		private allTags: string[],
+		private allProjects: string[],
 		private onDone: (r: CardResult) => void,
 	) {
 		super(app);
@@ -96,6 +101,24 @@ export class CardModal extends Modal {
 		});
 		select.value = String(this.column);
 		select.addEventListener('change', () => (this.column = Number(select.value)));
+
+		const project = this.prop(props, 'folder', 'Project').createEl('input', {
+			cls: 'kankan-prop-input',
+			type: 'text',
+			placeholder: '+ Add project',
+			value: this.card.project,
+		});
+		project.addEventListener('input', () => (this.card.project = cleanProject(project.value)));
+		new ValueSuggest(
+			this.app,
+			project,
+			() => this.allProjects,
+			cleanProject,
+			(el, v) => el.createSpan({ text: v }),
+			(v) => {
+				project.value = this.card.project = v;
+			},
+		);
 
 		this.renderTags(this.prop(props, 'tag', 'Tags'));
 
@@ -133,7 +156,7 @@ export class CardModal extends Modal {
 
 	private renderTags(box: HTMLElement) {
 		box.addClass('kankan-pill-box');
-		const input = createEl('input', { type: 'text', placeholder: 'Add tags' });
+		const input = createEl('input', { type: 'text', placeholder: '+ Add tags' });
 
 		const add = (raw: string) => {
 			const tag = cleanTag(raw);
@@ -151,16 +174,21 @@ export class CardModal extends Modal {
 					draw();
 				};
 			}
-			input.placeholder = this.card.tags.length ? '' : 'Add tags';
+			input.placeholder = this.card.tags.length ? '' : '+ Add tags';
 			box.appendChild(input);
 			if (focus) input.focus();
 		};
 
-		new TagSuggest(
+		new ValueSuggest(
 			this.app,
 			input,
 			() => this.allTags.filter((t) => !this.card.tags.includes(t)),
-			add,
+			cleanTag,
+			renderTagPill,
+			(t) => {
+				add(t);
+				input.value = '';
+			},
 		);
 		// Enter goes through the suggester (it always offers the typed text);
 		// comma/space commit directly, backspace on empty removes the last pill.

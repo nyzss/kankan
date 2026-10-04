@@ -8,7 +8,7 @@ kankan: board
 ---
 
 ## Todo
-- Fix login #work #urgent
+- Fix login [project:: Web site] #work #urgent
   Users get logged out
   on refresh
 - [ ] Buy plants #personal
@@ -21,6 +21,8 @@ assert(b.columns.length === 2, 'columns');
 assert(b.columns[1]!.collapsed && b.columns[1]!.name === 'Archive', 'collapsed');
 const c = b.columns[0]!.cards[0]!;
 assert(c.title === 'Fix login' && c.tags.join() === 'work,urgent', 'title/tags');
+assert(c.project === 'Web site', 'project');
+assert(b.columns[0]!.cards[1]!.project === '', 'no project');
 assert(c.desc === 'Users get logged out\non refresh', 'desc');
 assert(b.columns[0]!.cards[1]!.title === 'Buy plants', 'checkbox items');
 assert(JSON.stringify(parse(serialize(b))) === JSON.stringify(b), 'round trip');

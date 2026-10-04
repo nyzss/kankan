@@ -1,6 +1,17 @@
 import { Menu, TextFileView, WorkspaceLeaf, setIcon } from 'obsidian';
 import { Board, Card, parse, serialize } from './board';
-import { CardModal, renderTagPill } from './card-modal';
+import { CardModal, renderTagPill, tagHue } from './card-modal';
+
+// [hue, saturation%] for well-known column names; anything else gets a hue from its name.
+const COLUMN_COLORS: Record<string, [number, number]> = {
+	backlog: [220, 0],
+	todo: [210, 75],
+	'to do': [210, 75],
+	'in progress': [35, 85],
+	doing: [35, 85],
+	done: [145, 55],
+	archive: [220, 0],
+};
 
 export const VIEW_TYPE = 'kankan-board';
 
@@ -9,7 +20,9 @@ type Drag = { kind: 'card'; col: number; idx: number } | { kind: 'col'; idx: num
 export class BoardView extends TextFileView {
 	private board: Board = { columns: [] };
 	private drag: Drag | null = null;
-	private filter = '';
+	private search = '';
+	private selectedTags = new Set<string>();
+	private project: string | null = null; // null = all, '' = cards without a project
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -56,29 +69,94 @@ export class BoardView extends TextFileView {
 		root.addClass('kankan');
 
 		const bar = root.createDiv('kankan-toolbar');
+		const projects = this.boardProjects();
+		if (this.project && !projects.includes(this.project)) this.project = null;
+		const picker = bar.createEl('select', { cls: 'dropdown kankan-project-select' });
+		picker.createEl('option', { text: 'All projects', value: 'all' });
+		picker.createEl('option', { text: 'No project', value: 'none' });
+		for (const p of projects) picker.createEl('option', { text: p, value: 'p:' + p });
+		picker.value = this.project === null ? 'all' : this.project === '' ? 'none' : 'p:' + this.project;
+		picker.onchange = () => {
+			const v = picker.value;
+			this.project = v === 'all' ? null : v === 'none' ? '' : v.slice(2);
+			this.render();
+		};
+
 		const search = bar.createEl('input', {
 			type: 'search',
-			placeholder: 'Filter by tag…',
-			value: this.filter,
+			placeholder: 'Search cards…',
+			value: this.search,
 		});
 		search.addEventListener('input', () => {
-			this.filter = search.value.replace(/^#/, '').toLowerCase();
+			this.search = search.value.toLowerCase();
 			this.applyFilter();
 		});
 		bar.createEl('button', { text: 'Add column' }).onclick = () => {
 			this.board.columns.push({ name: 'New column', collapsed: false, cards: [] });
 			this.commit();
 		};
+		bar.createDiv('kankan-spacer');
+		const newCard = bar.createEl('button', { cls: 'mod-cta', text: 'New card' });
+		newCard.onclick = () => {
+			const cols = this.board.columns;
+			const todo = cols.findIndex((c) => ['todo', 'to do'].includes(c.name.toLowerCase()));
+			const target = todo !== -1 ? todo : cols.findIndex((c) => !c.collapsed);
+			if (target !== -1) this.editCard(target, -1);
+		};
+
+		// Tags offered for filtering are scoped to the selected project.
+		const tags = this.boardTags(this.inProject.bind(this));
+		for (const t of this.selectedTags) if (!tags.includes(t)) this.selectedTags.delete(t);
+		if (tags.length) {
+			const row = root.createDiv('kankan-filter-tags');
+			for (const t of tags) {
+				const pill = renderTagPill(row, t);
+				pill.toggleClass('is-selected', this.selectedTags.has(t));
+				pill.onclick = () => this.toggleTag(t);
+			}
+			if (this.selectedTags.size) {
+				row.createEl('a', { cls: 'kankan-clear', text: 'Clear' }).onclick = () => {
+					this.selectedTags.clear();
+					this.render();
+				};
+			}
+		}
 
 		const boardEl = root.createDiv('kankan-board');
 		this.board.columns.forEach((_, i) => this.renderColumn(boardEl, i));
 		this.applyFilter();
 	}
 
+	private allCards(): Card[] {
+		return this.board.columns.flatMap((c) => c.cards);
+	}
+
+	private boardTags(where: (c: Card) => boolean = () => true): string[] {
+		return [...new Set(this.allCards().filter(where).flatMap((k) => k.tags))].sort();
+	}
+
+	private boardProjects(): string[] {
+		return [...new Set(this.allCards().map((k) => k.project).filter(Boolean))].sort();
+	}
+
+	private inProject(card: Card): boolean {
+		return this.project === null || card.project === this.project;
+	}
+
+	private toggleTag(tag: string) {
+		if (!this.selectedTags.delete(tag)) this.selectedTags.add(tag);
+		this.render();
+	}
+
+	// Card shows if it's in the selected project, its title matches the search,
+	// and it has any of the selected tags.
 	private applyFilter() {
 		this.contentEl.querySelectorAll<HTMLElement>('.kankan-card').forEach((el) => {
 			const tags = (el.dataset.tags ?? '').split(' ');
-			const show = !this.filter || tags.some((t) => t.toLowerCase().startsWith(this.filter));
+			const show =
+				(this.project === null || el.dataset.project === this.project) &&
+				(el.dataset.title ?? '').includes(this.search) &&
+				(!this.selectedTags.size || tags.some((t) => this.selectedTags.has(t)));
 			el.toggleClass('kankan-hidden', !show);
 		});
 	}
@@ -87,6 +165,9 @@ export class BoardView extends TextFileView {
 		const col = this.board.columns[ci]!;
 		const colEl = parent.createDiv('kankan-column');
 		colEl.toggleClass('is-collapsed', col.collapsed);
+		const [hue, sat] = COLUMN_COLORS[col.name.toLowerCase()] ?? [tagHue(col.name), 65];
+		colEl.style.setProperty('--kankan-col-hue', String(hue));
+		colEl.style.setProperty('--kankan-col-sat', `${sat}%`);
 
 		// Column reordering: drop a dragged column onto another one.
 		colEl.addEventListener('dragover', (e) => {
@@ -115,6 +196,7 @@ export class BoardView extends TextFileView {
 			this.commit();
 		};
 
+		header.createSpan('kankan-dot');
 		const title = header.createDiv({ cls: 'kankan-column-title', text: col.name });
 		title.title = 'Double-click to rename';
 		title.ondblclick = () => this.renameColumn(title, ci);
@@ -147,6 +229,8 @@ export class BoardView extends TextFileView {
 		const el = list.createDiv('kankan-card');
 		el.draggable = true;
 		el.dataset.tags = card.tags.join(' ');
+		el.dataset.title = card.title.toLowerCase();
+		el.dataset.project = card.project;
 		el.addEventListener('dragstart', (e) => {
 			e.stopPropagation();
 			this.drag = { kind: 'card', col: ci, idx };
@@ -156,6 +240,11 @@ export class BoardView extends TextFileView {
 		el.addEventListener('dragend', () => el.removeClass('is-dragging'));
 		el.onclick = () => this.editCard(ci, idx);
 
+		if (card.project && this.project === null) {
+			const label = el.createDiv({ cls: 'kankan-card-project' });
+			setIcon(label.createSpan(), 'folder');
+			label.createSpan({ text: card.project });
+		}
 		el.createDiv({ cls: 'kankan-card-title', text: card.title });
 		if (card.desc) el.createDiv({ cls: 'kankan-card-desc', text: card.desc });
 		if (card.tags.length) {
@@ -164,8 +253,7 @@ export class BoardView extends TextFileView {
 				const chip = renderTagPill(tags, t);
 				chip.onclick = (e) => {
 					e.stopPropagation();
-					this.filter = t.toLowerCase();
-					this.render();
+					this.toggleTag(t);
 				};
 			}
 		}
@@ -193,14 +281,15 @@ export class BoardView extends TextFileView {
 	private editCard(ci: number, idx: number) {
 		const isNew = idx === -1;
 		const card = isNew
-			? { title: '', desc: '', tags: [] }
+			? { title: '', desc: '', tags: [], project: this.project ?? '' }
 			: this.board.columns[ci]!.cards[idx]!;
 		new CardModal(
 			this.app,
 			card,
 			ci,
 			this.board.columns.map((c) => c.name),
-			[...new Set(this.board.columns.flatMap((c) => c.cards.flatMap((k) => k.tags)))].sort(),
+			this.boardTags(),
+			this.boardProjects(),
 			({ card: result, column }) => {
 				if (!isNew) this.board.columns[ci]!.cards.splice(idx, 1);
 				if (result) this.board.columns[column]!.cards.splice(

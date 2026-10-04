@@ -1,4 +1,4 @@
-import { Plugin, TFile, ViewState, WorkspaceLeaf } from 'obsidian';
+import { Plugin, TFile, TFolder, ViewState, WorkspaceLeaf } from 'obsidian';
 import { DEFAULT_BOARD, FRONTMATTER_KEY } from './board';
 import { BoardView, VIEW_TYPE } from './view';
 
@@ -40,6 +40,14 @@ export default class KankanPlugin extends Plugin {
 
 		this.registerEvent(
 			this.app.workspace.on('file-menu', (menu, file, _source, leaf) => {
+				const folder = file instanceof TFolder ? file : file.parent;
+				if (folder) {
+					menu.addItem((i) =>
+						i.setTitle('New kanban board').setIcon('kanban-square').setSection('action-primary').onClick(() => {
+							void this.createBoard(folder);
+						}),
+					);
+				}
 				if (!(file instanceof TFile) || !leaf || !this.isBoard(file)) return;
 				if (leaf.view.getViewType() !== 'markdown') return;
 				menu.addItem((i) =>
@@ -70,8 +78,7 @@ export default class KankanPlugin extends Plugin {
 		await leaf.setViewState({ type: VIEW_TYPE, state: { file: file.path } });
 	}
 
-	private async createBoard() {
-		const folder = this.app.fileManager.getNewFileParent('');
+	private async createBoard(folder = this.app.fileManager.getNewFileParent('')) {
 		const base = (folder.isRoot() ? '' : folder.path + '/') + 'Board';
 		let path = base + '.md';
 		for (let n = 1; this.app.vault.getAbstractFileByPath(path); n++) path = `${base} ${n}.md`;
