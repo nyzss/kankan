@@ -2,6 +2,8 @@
 
 Simple kanban boards stored as plain markdown files.
 
+![Kankan board screenshot](assets/kankan-board.png)
+
 - **Create new board** (command or ribbon icon) creates a board with Backlog, Todo, In progress, Done and Archive columns. Archive is collapsed by default.
 - Drag cards between columns. Drag a column header to reorder columns.
 - Select a card to edit its title, description, tags or column. Select a tag chip to filter by that tag.
