@@ -1,6 +1,7 @@
 import { Menu, TextFileView, WorkspaceLeaf, setIcon } from 'obsidian';
-import { Board, Card, parse, serialize } from './board';
+import { Board, Card, effectiveTags, parse, serialize } from './board';
 import { CardModal, renderTagPill, tagHue } from './card-modal';
+import { BulkModal, ProjectTagsModal } from './modals';
 
 // Known column names use these [hue, saturation%] values. Other names get a hue from the name.
 const COLUMN_COLORS: Record<string, [number, number]> = {
@@ -15,14 +16,18 @@ const COLUMN_COLORS: Record<string, [number, number]> = {
 
 export const VIEW_TYPE = 'kankan-board';
 
-type Drag = { kind: 'card'; col: number; idx: number } | { kind: 'col'; idx: number };
+type Drag =
+	| { kind: 'card'; col: number; idx: number }
+	| { kind: 'col'; idx: number };
 
 export class BoardView extends TextFileView {
-	private board: Board = { columns: [] };
+	private board: Board = { columns: [], projectTags: {} };
 	private drag: Drag | null = null;
 	private search = '';
 	private selectedTags = new Set<string>();
-	private project: string | null = null; // null = all, '' = cards without a project
+	private projects = new Set<string>(); // empty = all, '' = cards without a project
+	private selecting = false;
+	private selection = new Set<Card>();
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -51,11 +56,12 @@ export class BoardView extends TextFileView {
 
 	setViewData(data: string) {
 		this.board = parse(data);
+		this.selection.clear();
 		this.render();
 	}
 
 	clear() {
-		this.board = { columns: [] };
+		this.board = { columns: [], projectTags: {} };
 	}
 
 	private commit() {
@@ -69,19 +75,6 @@ export class BoardView extends TextFileView {
 		root.addClass('kankan');
 
 		const bar = root.createDiv('kankan-toolbar');
-		const projects = this.boardProjects();
-		if (this.project && !projects.includes(this.project)) this.project = null;
-		const picker = bar.createEl('select', { cls: 'dropdown kankan-project-select' });
-		picker.createEl('option', { text: 'All projects', value: 'all' });
-		picker.createEl('option', { text: 'No project', value: 'none' });
-		for (const p of projects) picker.createEl('option', { text: p, value: 'p:' + p });
-		picker.value = this.project === null ? 'all' : this.project === '' ? 'none' : 'p:' + this.project;
-		picker.onchange = () => {
-			const v = picker.value;
-			this.project = v === 'all' ? null : v === 'none' ? '' : v.slice(2);
-			this.render();
-		};
-
 		const search = bar.createEl('input', {
 			type: 'search',
 			placeholder: 'Search cards…',
@@ -92,34 +85,78 @@ export class BoardView extends TextFileView {
 			this.applyFilter();
 		});
 		bar.createEl('button', { text: 'Add column' }).onclick = () => {
-			this.board.columns.push({ name: 'New column', collapsed: false, cards: [] });
+			this.board.columns.push({
+				name: 'New column',
+				collapsed: false,
+				cards: [],
+			});
 			this.commit();
 		};
 		bar.createDiv('kankan-spacer');
-		const newCard = bar.createEl('button', { cls: 'mod-cta', text: 'New card' });
-		newCard.onclick = () => {
-			const cols = this.board.columns;
-			const todo = cols.findIndex((c) => ['todo', 'to do'].includes(c.name.toLowerCase()));
-			const target = todo !== -1 ? todo : cols.findIndex((c) => !c.collapsed);
-			if (target !== -1) this.editCard(target, -1);
-		};
+		if (this.selecting) {
+			bar.createSpan({
+				cls: 'kankan-muted',
+				text: `${this.selection.size} selected`,
+			});
+			bar.createEl('button', { text: 'Done' }).onclick = () =>
+				this.setSelecting(false);
+			const edit = bar.createEl('button', {
+				cls: 'mod-cta',
+				text: 'Edit selected',
+			});
+			edit.disabled = !this.selection.size;
+			edit.onclick = () => this.bulkEdit();
+		} else {
+			const select = bar.createEl('button', { text: 'Select' });
+			select.title =
+				'Select several cards to edit them together. Shift-click also selects.';
+			select.onclick = () => this.setSelecting(true);
+			const newCard = bar.createEl('button', {
+				cls: 'mod-cta',
+				text: 'New card',
+			});
+			newCard.onclick = () => {
+				const cols = this.board.columns;
+				const todo = cols.findIndex((c) =>
+					['todo', 'to do'].includes(c.name.toLowerCase()),
+				);
+				const target =
+					todo !== -1 ? todo : cols.findIndex((c) => !c.collapsed);
+				if (target !== -1) this.editCard(target, -1);
+			};
+		}
 
-		// Show only tags from the selected project in the filter.
+		const projects = this.boardProjects();
+		for (const p of this.projects)
+			if (p && !projects.includes(p)) this.projects.delete(p);
+		if (projects.length) {
+			const row = root.createDiv('kankan-filter-tags');
+			for (const p of [...projects, '']) {
+				const pill = this.renderProjectPill(row, p);
+				pill.toggleClass('is-selected', this.projects.has(p));
+				if (p) {
+					pill.title = 'Right-click to edit project tags';
+					pill.oncontextmenu = (e) => {
+						e.preventDefault();
+						this.editProjectTags(p);
+					};
+				}
+			}
+			this.renderClear(row, this.projects);
+		}
+
+		// Show only tags from the selected projects in the filter.
 		const tags = this.boardTags(this.inProject.bind(this));
-		for (const t of this.selectedTags) if (!tags.includes(t)) this.selectedTags.delete(t);
+		for (const t of this.selectedTags)
+			if (!tags.includes(t)) this.selectedTags.delete(t);
 		if (tags.length) {
 			const row = root.createDiv('kankan-filter-tags');
 			for (const t of tags) {
 				const pill = renderTagPill(row, t);
 				pill.toggleClass('is-selected', this.selectedTags.has(t));
-				pill.onclick = () => this.toggleTag(t);
+				pill.onclick = () => this.toggle(this.selectedTags, t);
 			}
-			if (this.selectedTags.size) {
-				row.createEl('a', { cls: 'kankan-clear', text: 'Clear' }).onclick = () => {
-					this.selectedTags.clear();
-					this.render();
-				};
-			}
+			this.renderClear(row, this.selectedTags);
 		}
 
 		const boardEl = root.createDiv('kankan-board');
@@ -132,40 +169,137 @@ export class BoardView extends TextFileView {
 	}
 
 	private boardTags(where: (c: Card) => boolean = () => true): string[] {
-		return [...new Set(this.allCards().filter(where).flatMap((k) => k.tags))].sort();
+		const cards = this.allCards().filter(where);
+		return [
+			...new Set(cards.flatMap((k) => effectiveTags(this.board, k))),
+		].sort();
 	}
 
+	// Projects with tags but no cards stay listed so their tags can still be edited.
 	private boardProjects(): string[] {
-		return [...new Set(this.allCards().map((k) => k.project).filter(Boolean))].sort();
+		const names = [
+			...this.allCards().map((k) => k.project),
+			...Object.keys(this.board.projectTags),
+		];
+		return [...new Set(names.filter(Boolean))].sort();
 	}
 
 	private inProject(card: Card): boolean {
-		return this.project === null || card.project === this.project;
+		return !this.projects.size || this.projects.has(card.project);
 	}
 
-	private toggleTag(tag: string) {
-		if (!this.selectedTags.delete(tag)) this.selectedTags.add(tag);
+	private toggle<T>(set: Set<T>, value: T) {
+		if (!set.delete(value)) set.add(value);
 		this.render();
 	}
 
-	// Show a card if it belongs to the selected project, matches the search,
+	private renderClear(row: HTMLElement, set: Set<string>) {
+		if (!set.size) return;
+		row.createEl('a', { cls: 'kankan-clear', text: 'Clear' }).onclick =
+			() => {
+				set.clear();
+				this.render();
+			};
+	}
+
+	private renderProjectPill(
+		parent: HTMLElement,
+		project: string,
+	): HTMLElement {
+		const pill = parent.createSpan({
+			cls: 'kankan-pill kankan-project-pill',
+		});
+		pill.toggleClass('is-empty', !project);
+		pill.style.setProperty('--kankan-hue', String(tagHue(project)));
+		setIcon(pill.createSpan(), 'folder');
+		pill.createSpan({ text: project || 'No project' });
+		pill.onclick = (e) => {
+			e.stopPropagation();
+			this.toggle(this.projects, project);
+		};
+		return pill;
+	}
+
+	private editProjectTags(project: string) {
+		new ProjectTagsModal(
+			this.app,
+			project,
+			this.board.projectTags[project] ?? [],
+			this.boardTags(),
+			(tags) => {
+				if (tags.length) this.board.projectTags[project] = tags;
+				else delete this.board.projectTags[project];
+				this.commit();
+			},
+		).open();
+	}
+
+	private setSelecting(on: boolean) {
+		this.selecting = on;
+		if (!on) this.selection.clear();
+		this.render();
+	}
+
+	private bulkEdit() {
+		const selected = [...this.selection];
+		new BulkModal(
+			this.app,
+			selected.length,
+			this.board.columns.map((c) => c.name),
+			this.boardTags(),
+			[...new Set(selected.flatMap((c) => c.tags))].sort(),
+			this.boardProjects(),
+			(r) => {
+				const moved: Card[] = [];
+				for (const col of this.board.columns) {
+					col.cards = col.cards.filter((c) => {
+						if (!this.selection.has(c)) return true;
+						if (r.delete) return false;
+						if (r.project !== null) c.project = r.project;
+						c.tags = c.tags.filter(
+							(t) => !r.removeTags.includes(t),
+						);
+						for (const t of r.addTags)
+							if (!c.tags.includes(t)) c.tags.push(t);
+						if (r.column === null) return true;
+						moved.push(c);
+						return false;
+					});
+				}
+				if (r.column !== null)
+					this.board.columns[r.column]!.cards.push(...moved);
+				this.selecting = false;
+				this.selection.clear();
+				this.commit();
+			},
+		).open();
+	}
+
+	// Show a card if it belongs to a selected project, matches the search,
 	// and has at least one selected tag.
 	private applyFilter() {
-		this.contentEl.querySelectorAll<HTMLElement>('.kankan-card').forEach((el) => {
-			const tags = (el.dataset.tags ?? '').split(' ');
-			const show =
-				(this.project === null || el.dataset.project === this.project) &&
-				(el.dataset.title ?? '').includes(this.search) &&
-				(!this.selectedTags.size || tags.some((t) => this.selectedTags.has(t)));
-			el.toggleClass('kankan-hidden', !show);
-		});
+		this.contentEl
+			.querySelectorAll<HTMLElement>('.kankan-card')
+			.forEach((el) => {
+				const tags = (el.dataset.tags ?? '').split(' ');
+				const show =
+					(!this.projects.size ||
+						this.projects.has(el.dataset.project ?? '')) &&
+					(el.dataset.title ?? '').includes(this.search) &&
+					(!this.selectedTags.size ||
+						tags.some((t) => this.selectedTags.has(t)));
+				el.toggleClass('kankan-hidden', !show);
+			});
 	}
 
 	private renderColumn(parent: HTMLElement, ci: number) {
 		const col = this.board.columns[ci]!;
 		const colEl = parent.createDiv('kankan-column');
 		colEl.toggleClass('is-collapsed', col.collapsed);
-		const [hue, sat] = COLUMN_COLORS[col.name.toLowerCase()] ?? [tagHue(col.name), 65];
+		const [hue, sat] = COLUMN_COLORS[col.name.toLowerCase()] ?? [
+			tagHue(col.name),
+			65,
+		];
 		colEl.style.setProperty('--kankan-col-hue', String(hue));
 		colEl.style.setProperty('--kankan-col-sat', `${sat}%`);
 
@@ -197,10 +331,16 @@ export class BoardView extends TextFileView {
 		};
 
 		header.createSpan('kankan-dot');
-		const title = header.createDiv({ cls: 'kankan-column-title', text: col.name });
+		const title = header.createDiv({
+			cls: 'kankan-column-title',
+			text: col.name,
+		});
 		title.title = 'Double-click to rename';
 		title.ondblclick = () => this.renameColumn(title, ci);
-		header.createSpan({ cls: 'kankan-count', text: String(col.cards.length) });
+		header.createSpan({
+			cls: 'kankan-count',
+			text: String(col.cards.length),
+		});
 
 		const menuBtn = header.createDiv('clickable-icon');
 		setIcon(menuBtn, 'more-horizontal');
@@ -216,7 +356,12 @@ export class BoardView extends TextFileView {
 			if (this.drag?.kind !== 'card') return;
 			e.preventDefault();
 			e.stopPropagation();
-			this.moveCard(this.drag.col, this.drag.idx, ci, this.dropIndex(list, e.clientY));
+			this.moveCard(
+				this.drag.col,
+				this.drag.idx,
+				ci,
+				this.dropIndex(list, e.clientY),
+			);
 		});
 
 		col.cards.forEach((card, idx) => this.renderCard(list, card, ci, idx));
@@ -228,7 +373,8 @@ export class BoardView extends TextFileView {
 	private renderCard(list: HTMLElement, card: Card, ci: number, idx: number) {
 		const el = list.createDiv('kankan-card');
 		el.draggable = true;
-		el.dataset.tags = card.tags.join(' ');
+		const tags = effectiveTags(this.board, card);
+		el.dataset.tags = tags.join(' ');
 		el.dataset.title = card.title.toLowerCase();
 		el.dataset.project = card.project;
 		el.addEventListener('dragstart', (e) => {
@@ -238,22 +384,34 @@ export class BoardView extends TextFileView {
 			el.addClass('is-dragging');
 		});
 		el.addEventListener('dragend', () => el.removeClass('is-dragging'));
-		el.onclick = () => this.editCard(ci, idx);
+		el.toggleClass('is-selected', this.selection.has(card));
+		el.onclick = (e) => {
+			if (!this.selecting && !e.shiftKey) return this.editCard(ci, idx);
+			this.selecting = true;
+			this.toggle(this.selection, card);
+		};
 
-		if (card.project && this.project === null) {
+		if (card.project && this.projects.size !== 1) {
 			const label = el.createDiv({ cls: 'kankan-card-project' });
 			setIcon(label.createSpan(), 'folder');
 			label.createSpan({ text: card.project });
+			label.onclick = (e) => {
+				e.stopPropagation();
+				this.toggle(this.projects, card.project);
+			};
 		}
 		el.createDiv({ cls: 'kankan-card-title', text: card.title });
-		if (card.desc) el.createDiv({ cls: 'kankan-card-desc', text: card.desc });
-		if (card.tags.length) {
-			const tags = el.createDiv('kankan-tags');
-			for (const t of card.tags) {
-				const chip = renderTagPill(tags, t);
+		if (card.desc)
+			el.createDiv({ cls: 'kankan-card-desc', text: card.desc });
+		if (tags.length) {
+			const row = el.createDiv('kankan-tags');
+			for (const t of tags) {
+				const chip = renderTagPill(row, t);
+				// Tags that come only from the project are shown faded.
+				chip.toggleClass('is-inherited', !card.tags.includes(t));
 				chip.onclick = (e) => {
 					e.stopPropagation();
-					this.toggleTag(t);
+					this.toggle(this.selectedTags, t);
 				};
 			}
 		}
@@ -261,7 +419,9 @@ export class BoardView extends TextFileView {
 
 	// Return the position of the first visible card below the pointer in the full list.
 	private dropIndex(list: HTMLElement, y: number): number {
-		const cards = Array.from(list.querySelectorAll<HTMLElement>('.kankan-card'));
+		const cards = Array.from(
+			list.querySelectorAll<HTMLElement>('.kankan-card'),
+		);
 		const i = cards.findIndex((c) => {
 			if (c.hasClass('kankan-hidden')) return false;
 			const r = c.getBoundingClientRect();
@@ -270,7 +430,12 @@ export class BoardView extends TextFileView {
 		return i === -1 ? cards.length : i;
 	}
 
-	private moveCard(fromCol: number, fromIdx: number, toCol: number, toIdx: number) {
+	private moveCard(
+		fromCol: number,
+		fromIdx: number,
+		toCol: number,
+		toIdx: number,
+	) {
 		const [card] = this.board.columns[fromCol]!.cards.splice(fromIdx, 1);
 		if (fromCol === toCol && fromIdx < toIdx) toIdx--;
 		this.board.columns[toCol]!.cards.splice(toIdx, 0, card!);
@@ -281,7 +446,13 @@ export class BoardView extends TextFileView {
 	private editCard(ci: number, idx: number) {
 		const isNew = idx === -1;
 		const card = isNew
-			? { title: '', desc: '', tags: [], project: this.project ?? '' }
+			? {
+					title: '',
+					desc: '',
+					tags: [],
+					project:
+						this.projects.size === 1 ? [...this.projects][0]! : '',
+				}
 			: this.board.columns[ci]!.cards[idx]!;
 		new CardModal(
 			this.app,
@@ -292,11 +463,14 @@ export class BoardView extends TextFileView {
 			this.boardProjects(),
 			({ card: result, column }) => {
 				if (!isNew) this.board.columns[ci]!.cards.splice(idx, 1);
-				if (result) this.board.columns[column]!.cards.splice(
-					isNew || column !== ci ? this.board.columns[column]!.cards.length : idx,
-					0,
-					result,
-				);
+				if (result)
+					this.board.columns[column]!.cards.splice(
+						isNew || column !== ci
+							? this.board.columns[column]!.cards.length
+							: idx,
+						0,
+						result,
+					);
 				this.commit();
 			},
 		).open();
@@ -326,21 +500,41 @@ export class BoardView extends TextFileView {
 		const cols = this.board.columns;
 		new Menu()
 			.addItem((i) =>
-				i.setTitle('Rename').setIcon('pencil').onClick(() => this.renameColumn(titleEl, ci)),
+				i
+					.setTitle('Rename')
+					.setIcon('pencil')
+					.onClick(() => this.renameColumn(titleEl, ci)),
 			)
 			.addItem((i) =>
-				i.setTitle('Add column after').setIcon('plus').onClick(() => {
-					cols.splice(ci + 1, 0, { name: 'New column', collapsed: false, cards: [] });
-					this.commit();
-				}),
+				i
+					.setTitle('Add column after')
+					.setIcon('plus')
+					.onClick(() => {
+						cols.splice(ci + 1, 0, {
+							name: 'New column',
+							collapsed: false,
+							cards: [],
+						});
+						this.commit();
+					}),
 			)
 			.addItem((i) =>
-				i.setTitle('Delete column').setIcon('trash').setWarning(true).onClick(() => {
-					const n = cols[ci]!.cards.length;
-					if (n && !confirm(`Delete "${cols[ci]!.name}" and its ${n} card(s)?`)) return;
-					cols.splice(ci, 1);
-					this.commit();
-				}),
+				i
+					.setTitle('Delete column')
+					.setIcon('trash')
+					.setWarning(true)
+					.onClick(() => {
+						const n = cols[ci]!.cards.length;
+						if (
+							n &&
+							!confirm(
+								`Delete "${cols[ci]!.name}" and its ${n} card(s)?`,
+							)
+						)
+							return;
+						cols.splice(ci, 1);
+						this.commit();
+					}),
 			)
 			.showAtMouseEvent(e);
 	}

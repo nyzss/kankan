@@ -4,6 +4,8 @@
 // kankan: board
 // ---
 //
+// %% project: Website #work %%
+//
 // ## Todo
 // - Card title [project:: Website] #work #urgent
 //   Description lines, indented.
@@ -25,12 +27,20 @@ export interface Column {
 
 export interface Board {
 	columns: Column[];
+	projectTags: Record<string, string[]>; // tags every card in the project inherits
 }
 
 export const FRONTMATTER_KEY = 'kankan';
 const COLLAPSED = '%% collapsed %%';
 const TAG_RE = /(^|\s)#([^\s#]+)/g;
 const PROJECT_RE = /\[project::\s*([^\]]*)\]/;
+const PROJECT_LINE_RE = /^%% project:\s*(.*?)\s*%%$/;
+
+export function effectiveTags(board: Board, card: Card): string[] {
+	return [
+		...new Set([...card.tags, ...(board.projectTags[card.project] ?? [])]),
+	];
+}
 
 export const DEFAULT_BOARD = serialize({
 	columns: [
@@ -40,14 +50,26 @@ export const DEFAULT_BOARD = serialize({
 		{ name: 'Done', collapsed: false, cards: [] },
 		{ name: 'Archive', collapsed: true, cards: [] },
 	],
+	projectTags: {},
 });
 
 export function parse(text: string): Board {
 	const columns: Column[] = [];
+	const projectTags: Record<string, string[]> = {};
 	let card: Card | null = null;
 	const body = text.replace(/^---\n[\s\S]*?\n---\n?/, '');
 
 	for (const line of body.split('\n')) {
+		const projectLine = line.match(PROJECT_LINE_RE);
+		if (projectLine) {
+			const raw = projectLine[1] ?? '';
+			const name = raw.replace(TAG_RE, '').trim();
+			if (name)
+				projectTags[name] = [...raw.matchAll(TAG_RE)].map(
+					(m) => m[2] ?? '',
+				);
+			continue;
+		}
 		const heading = line.match(/^##\s+(.*)$/);
 		if (heading) {
 			const raw = heading[1] ?? '';
@@ -78,11 +100,18 @@ export function parse(text: string): Board {
 			card.desc += (card.desc ? '\n' : '') + line.trim();
 		}
 	}
-	return { columns };
+	return { columns, projectTags };
 }
 
 export function serialize(board: Board): string {
 	const out = ['---', `${FRONTMATTER_KEY}: board`, '---', ''];
+	const projects = Object.entries(board.projectTags).filter(
+		([, tags]) => tags.length,
+	);
+	for (const [name, tags] of projects) {
+		out.push(`%% project: ${name}${tags.map((t) => ' #' + t).join('')} %%`);
+	}
+	if (projects.length) out.push('');
 	for (const col of board.columns) {
 		out.push(`## ${col.name}${col.collapsed ? ' ' + COLLAPSED : ''}`);
 		for (const c of col.cards) {

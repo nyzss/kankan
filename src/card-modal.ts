@@ -19,12 +19,16 @@ export function renderTagPill(parent: HTMLElement, tag: string): HTMLElement {
 	return pill;
 }
 
-const cleanTag = (s: string) => s.trim().replace(/^#/, '').replace(/[\s,#]+/g, '-');
+export const cleanTag = (s: string) =>
+	s
+		.trim()
+		.replace(/^#/, '')
+		.replace(/[\s,#]+/g, '-');
 // Remove brackets and # so they do not break the `[project:: X]` field or tag parsing.
-const cleanProject = (s: string) => s.replace(/[[\]#]/g, '').trim();
+export const cleanProject = (s: string) => s.replace(/[[\]#]/g, '').trim();
 
 // Suggest existing values and offer the typed text as a "Create …" entry.
-class ValueSuggest extends AbstractInputSuggest<string> {
+export class ValueSuggest extends AbstractInputSuggest<string> {
 	constructor(
 		app: App,
 		input: HTMLInputElement,
@@ -40,12 +44,14 @@ class ValueSuggest extends AbstractInputSuggest<string> {
 		const q = this.clean(query).toLowerCase();
 		const values = this.available();
 		const matches = values.filter((v) => v.toLowerCase().includes(q));
-		if (q && !values.some((v) => v.toLowerCase() === q)) matches.push(this.clean(query));
+		if (q && !values.some((v) => v.toLowerCase() === q))
+			matches.push(this.clean(query));
 		return matches;
 	}
 
 	renderSuggestion(v: string, el: HTMLElement) {
-		if (!this.available().includes(v)) el.createSpan({ text: 'Create ', cls: 'kankan-muted' });
+		if (!this.available().includes(v))
+			el.createSpan({ text: 'Create ', cls: 'kankan-muted' });
 		this.renderValue(el, v);
 	}
 
@@ -55,9 +61,82 @@ class ValueSuggest extends AbstractInputSuggest<string> {
 	}
 }
 
+export function renderProp(
+	parent: HTMLElement,
+	icon: string,
+	label: string,
+): HTMLElement {
+	const row = parent.createDiv('kankan-prop');
+	const name = row.createDiv('kankan-prop-name');
+	setIcon(name.createSpan('kankan-prop-icon'), icon);
+	name.createSpan({ text: label });
+	return row.createDiv('kankan-prop-value');
+}
+
+// Edit `tags` in place as removable pills with an autocompleting input.
+export function renderTagEditor(
+	app: App,
+	box: HTMLElement,
+	tags: string[],
+	allTags: () => string[],
+	placeholder = '+ Add tags',
+) {
+	box.addClass('kankan-pill-box');
+	const input = createEl('input', { type: 'text', placeholder });
+
+	const add = (raw: string) => {
+		const tag = cleanTag(raw);
+		if (tag && !tags.includes(tag)) tags.push(tag);
+		draw();
+	};
+	const draw = (focus = true) => {
+		box.empty();
+		for (const tag of tags) {
+			const pill = renderTagPill(box, tag);
+			const x = pill.createSpan('kankan-pill-x');
+			setIcon(x, 'x');
+			x.onclick = () => {
+				tags.remove(tag);
+				draw();
+			};
+		}
+		input.placeholder = tags.length ? '' : placeholder;
+		box.appendChild(input);
+		if (focus) input.focus();
+	};
+
+	new ValueSuggest(
+		app,
+		input,
+		() => allTags().filter((t) => !tags.includes(t)),
+		cleanTag,
+		renderTagPill,
+		(t) => {
+			add(t);
+			input.value = '';
+		},
+	);
+	input.addEventListener('keydown', (e) => {
+		if ((e.key === ',' || e.key === ' ') && input.value.trim()) {
+			e.preventDefault();
+			add(input.value);
+			input.value = '';
+		} else if (e.key === 'Backspace' && !input.value && tags.length) {
+			tags.pop();
+			draw();
+		}
+	});
+	box.onclick = (e) => {
+		if (e.target === box) input.focus();
+	};
+
+	draw(false);
+}
+
 export class CardModal extends Modal {
 	private card: Card;
 	private isNew: boolean;
+	private saved = false;
 
 	constructor(
 		app: App,
@@ -93,22 +172,34 @@ export class CardModal extends Modal {
 
 		const props = contentEl.createDiv('kankan-props');
 
-		const select = this.prop(props, 'columns-3', 'Column').createEl('select', {
-			cls: 'kankan-prop-select',
-		});
+		const select = renderProp(props, 'columns-3', 'Column').createEl(
+			'select',
+			{
+				cls: 'kankan-prop-select',
+			},
+		);
 		this.columns.forEach((name, i) => {
 			select.createEl('option', { text: name, value: String(i) });
 		});
 		select.value = String(this.column);
-		select.addEventListener('change', () => (this.column = Number(select.value)));
+		select.addEventListener(
+			'change',
+			() => (this.column = Number(select.value)),
+		);
 
-		const project = this.prop(props, 'folder', 'Project').createEl('input', {
-			cls: 'kankan-prop-input',
-			type: 'text',
-			placeholder: '+ Add project',
-			value: this.card.project,
-		});
-		project.addEventListener('input', () => (this.card.project = cleanProject(project.value)));
+		const project = renderProp(props, 'folder', 'Project').createEl(
+			'input',
+			{
+				cls: 'kankan-prop-input',
+				type: 'text',
+				placeholder: '+ Add project',
+				value: this.card.project,
+			},
+		);
+		project.addEventListener(
+			'input',
+			() => (this.card.project = cleanProject(project.value)),
+		);
 		new ValueSuggest(
 			this.app,
 			project,
@@ -120,9 +211,17 @@ export class CardModal extends Modal {
 			},
 		);
 
-		this.renderTags(this.prop(props, 'tag', 'Tags'));
+		renderTagEditor(
+			this.app,
+			renderProp(props, 'tag', 'Tags'),
+			this.card.tags,
+			() => this.allTags,
+		);
 
-		contentEl.createDiv({ cls: 'kankan-section-label', text: 'Description' });
+		contentEl.createDiv({
+			cls: 'kankan-section-label',
+			text: 'Description',
+		});
 		const desc = contentEl.createEl('textarea', {
 			cls: 'kankan-modal-desc',
 			placeholder: 'Add a description…',
@@ -132,85 +231,28 @@ export class CardModal extends Modal {
 
 		const footer = this.modalEl.createDiv('kankan-modal-footer');
 		if (!this.isNew) {
-			const del = footer.createEl('button', { cls: 'mod-warning', text: 'Delete' });
+			const del = footer.createEl('button', {
+				cls: 'mod-warning',
+				text: 'Delete',
+			});
 			del.onclick = () => {
 				this.onDone({ card: null, column: this.column });
 				this.close();
 			};
 		}
 		footer.createDiv('kankan-spacer');
-		footer.createEl('button', { text: 'Cancel' }).onclick = () => this.close();
+		footer.createEl('button', { text: 'Cancel' }).onclick = () =>
+			this.close();
 		footer.createEl('button', {
 			cls: 'mod-cta',
 			text: `${this.isNew ? 'Create' : 'Save'} (⇧↵)`,
 		}).onclick = () => this.save();
 	}
 
-	private prop(parent: HTMLElement, icon: string, label: string): HTMLElement {
-		const row = parent.createDiv('kankan-prop');
-		const name = row.createDiv('kankan-prop-name');
-		setIcon(name.createSpan('kankan-prop-icon'), icon);
-		name.createSpan({ text: label });
-		return row.createDiv('kankan-prop-value');
-	}
-
-	private renderTags(box: HTMLElement) {
-		box.addClass('kankan-pill-box');
-		const input = createEl('input', { type: 'text', placeholder: '+ Add tags' });
-
-		const add = (raw: string) => {
-			const tag = cleanTag(raw);
-			if (tag && !this.card.tags.includes(tag)) this.card.tags.push(tag);
-			draw();
-		};
-		const draw = (focus = true) => {
-			box.empty();
-			for (const tag of this.card.tags) {
-				const pill = renderTagPill(box, tag);
-				const x = pill.createSpan('kankan-pill-x');
-				setIcon(x, 'x');
-				x.onclick = () => {
-					this.card.tags.remove(tag);
-					draw();
-				};
-			}
-			input.placeholder = this.card.tags.length ? '' : '+ Add tags';
-			box.appendChild(input);
-			if (focus) input.focus();
-		};
-
-		new ValueSuggest(
-			this.app,
-			input,
-			() => this.allTags.filter((t) => !this.card.tags.includes(t)),
-			cleanTag,
-			renderTagPill,
-			(t) => {
-				add(t);
-				input.value = '';
-			},
-		);
-		// Enter uses the suggester, which always offers the typed text.
-		// Comma or space saves the value. Backspace on an empty input removes the last pill.
-		input.addEventListener('keydown', (e) => {
-			if ((e.key === ',' || e.key === ' ') && input.value.trim()) {
-				e.preventDefault();
-				add(input.value);
-				input.value = '';
-			} else if (e.key === 'Backspace' && !input.value && this.card.tags.length) {
-				this.card.tags.pop();
-				draw();
-			}
-		});
-		box.onclick = (e) => {
-			if (e.target === box) input.focus();
-		};
-
-		draw(false);
-	}
-
 	private save() {
-		if (!this.card.title.trim()) return;
+		// Mod+Enter in the title fires both the scope and the input handler.
+		if (this.saved || !this.card.title.trim()) return;
+		this.saved = true;
 		this.card.title = this.card.title.trim();
 		this.onDone({ card: this.card, column: this.column });
 		this.close();

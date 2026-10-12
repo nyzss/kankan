@@ -332,3 +332,30 @@
 .kankan-spacer {
 	flex: 1;
 }
+
+/* Project filter pills and multi-select */
+.kankan-project-pill {
+	--icon-size: 12px;
+}
+
+.kankan-project-pill.is-empty {
+	background: var(--background-modifier-hover);
+}
+
+.kankan-card-project {
+	cursor: pointer;
+}
+
+.kankan-card-project:hover {
+	color: var(--text-normal);
+}
+
+.kankan-pill.is-inherited {
+	opacity: 0.6;
+	font-style: italic;
+}
+
+.kankan-card.is-selected {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
