@@ -51,7 +51,9 @@
 }
 
 .kankan-column {
-	flex: 0 0 270px;
+	flex: 0 0 auto;
+	width: var(--kankan-col-width, 300px);
+	position: relative;
 	display: flex;
 	flex-direction: column;
 	--kankan-col: hsl(var(--kankan-col-hue), var(--kankan-col-sat), 55%);
@@ -64,6 +66,20 @@
 	max-height: 100%;
 }
 
+.kankan-resize {
+	position: absolute;
+	top: 0;
+	right: 0;
+	bottom: 0;
+	width: 6px;
+	cursor: col-resize;
+	border-radius: 0 var(--radius-l) var(--radius-l) 0;
+}
+
+.kankan-resize:hover {
+	background: hsla(var(--kankan-col-hue), var(--kankan-col-sat), 55%, 0.3);
+}
+
 .kankan-dot {
 	width: 8px;
 	height: 8px;
@@ -74,7 +90,7 @@
 }
 
 .kankan-column.is-collapsed {
-	flex-basis: auto;
+	width: auto;
 	opacity: 0.7;
 }
 
@@ -124,6 +140,7 @@
 	cursor: pointer;
 	box-shadow: var(--shadow-s);
 	transition: border-color 0.1s, transform 0.1s;
+	overflow-wrap: anywhere;
 }
 
 .theme-dark .kankan-card {

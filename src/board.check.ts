@@ -18,7 +18,7 @@ kankan: board
   on refresh
 - [ ] Buy plants #personal
 
-## Archive %% collapsed %%
+## Archive %% collapsed %% %% width: 320 %%
 - Old thing
 `;
 const b = parse(md);
@@ -27,6 +27,7 @@ assert(
 	b.columns[1]!.collapsed && b.columns[1]!.name === 'Archive',
 	'collapsed',
 );
+assert(b.columns[1]!.width === 320 && b.columns[0]!.width === undefined, 'width');
 const c = b.columns[0]!.cards[0]!;
 assert(
 	c.title === 'Fix login' && c.tags.join() === 'work,urgent',

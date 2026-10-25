@@ -71,6 +71,16 @@ export class BoardView extends TextFileView {
 
 	private render() {
 		const root = this.contentEl;
+		// Re-rendering rebuilds the DOM, so keep the scroll positions.
+		const oldBoard = root.querySelector('.kankan-board');
+		const scroll = {
+			top: root.scrollTop,
+			left: oldBoard?.scrollLeft ?? 0,
+			cols: Array.from(
+				root.querySelectorAll('.kankan-column'),
+				(c) => c.querySelector('.kankan-cards')?.scrollTop ?? 0,
+			),
+		};
 		root.empty();
 		root.addClass('kankan');
 
@@ -162,6 +172,13 @@ export class BoardView extends TextFileView {
 		const boardEl = root.createDiv('kankan-board');
 		this.board.columns.forEach((_, i) => this.renderColumn(boardEl, i));
 		this.applyFilter();
+
+		root.scrollTop = scroll.top;
+		boardEl.scrollLeft = scroll.left;
+		boardEl.querySelectorAll('.kankan-column').forEach((c, i) => {
+			const list = c.querySelector('.kankan-cards');
+			if (list) list.scrollTop = scroll.cols[i] ?? 0;
+		});
 	}
 
 	private allCards(): Card[] {
@@ -302,14 +319,22 @@ export class BoardView extends TextFileView {
 		];
 		colEl.style.setProperty('--kankan-col-hue', String(hue));
 		colEl.style.setProperty('--kankan-col-sat', `${sat}%`);
+		if (col.width)
+			colEl.style.setProperty('--kankan-col-width', `${col.width}px`);
 
 		// Drop a dragged column onto another column to change the order.
+		// Drop a card on a column outside its card list (for example a
+		// collapsed column) to add it at the end.
 		colEl.addEventListener('dragover', (e) => {
-			if (this.drag?.kind === 'col') e.preventDefault();
+			if (this.drag) e.preventDefault();
 		});
 		colEl.addEventListener('drop', (e) => {
-			if (this.drag?.kind !== 'col') return;
+			if (!this.drag) return;
 			e.preventDefault();
+			if (this.drag.kind === 'card') {
+				this.moveCard(this.drag.col, this.drag.idx, ci, col.cards.length);
+				return;
+			}
 			const [moved] = this.board.columns.splice(this.drag.idx, 1);
 			this.board.columns.splice(ci, 0, moved!);
 			this.drag = null;
@@ -347,6 +372,23 @@ export class BoardView extends TextFileView {
 		menuBtn.onclick = (e) => this.columnMenu(e, ci, title);
 
 		if (col.collapsed) return;
+
+		// Drag the right edge of a column to resize it.
+		const handle = colEl.createDiv('kankan-resize');
+		handle.onpointerdown = (e) => {
+			e.preventDefault();
+			handle.setPointerCapture(e.pointerId);
+			const startX = e.clientX;
+			const startW = colEl.offsetWidth;
+			handle.onpointermove = (ev) => {
+				col.width = Math.min(800, Math.max(200, startW + ev.clientX - startX));
+				colEl.style.setProperty('--kankan-col-width', `${col.width}px`);
+			};
+			handle.onpointerup = () => {
+				handle.onpointermove = handle.onpointerup = null;
+				this.requestSave();
+			};
+		};
 
 		const list = colEl.createDiv('kankan-cards');
 		list.addEventListener('dragover', (e) => {

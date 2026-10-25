@@ -11,6 +11,7 @@
 //   Description lines, indented.
 //
 // ## Archive %% collapsed %%
+// ## Done %% width: 320 %%
 
 export interface Card {
 	title: string;
@@ -22,6 +23,7 @@ export interface Card {
 export interface Column {
 	name: string;
 	collapsed: boolean;
+	width?: number; // px, set by resizing the column
 	cards: Card[];
 }
 
@@ -32,6 +34,7 @@ export interface Board {
 
 export const FRONTMATTER_KEY = 'kankan';
 const COLLAPSED = '%% collapsed %%';
+const WIDTH_RE = /\s*%% width: (\d+) %%/;
 const TAG_RE = /(^|\s)#([^\s#]+)/g;
 const PROJECT_RE = /\[project::\s*([^\]]*)\]/;
 const PROJECT_LINE_RE = /^%% project:\s*(.*?)\s*%%$/;
@@ -73,9 +76,11 @@ export function parse(text: string): Board {
 		const heading = line.match(/^##\s+(.*)$/);
 		if (heading) {
 			const raw = heading[1] ?? '';
+			const width = raw.match(WIDTH_RE)?.[1];
 			columns.push({
-				name: raw.replace(COLLAPSED, '').trim(),
+				name: raw.replace(COLLAPSED, '').replace(WIDTH_RE, '').trim(),
 				collapsed: raw.includes(COLLAPSED),
+				width: width ? Number(width) : undefined,
 				cards: [],
 			});
 			card = null;
@@ -113,7 +118,10 @@ export function serialize(board: Board): string {
 	}
 	if (projects.length) out.push('');
 	for (const col of board.columns) {
-		out.push(`## ${col.name}${col.collapsed ? ' ' + COLLAPSED : ''}`);
+		const width = col.width ? ` %% width: ${col.width} %%` : '';
+		out.push(
+			`## ${col.name}${col.collapsed ? ' ' + COLLAPSED : ''}${width}`,
+		);
 		for (const c of col.cards) {
 			const tags = c.tags.map((t) => ' #' + t).join('');
 			const project = c.project ? ` [project:: ${c.project}]` : '';
