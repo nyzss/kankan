@@ -34,7 +34,7 @@ export interface Board {
 
 export const FRONTMATTER_KEY = 'kankan';
 const COLLAPSED = '%% collapsed %%';
-const WIDTH_RE = /\s*%% width: (\d+) %%/;
+const WIDTH_RE = /\s*%% width: ([\d.]+) %%/g;
 const TAG_RE = /(^|\s)#([^\s#]+)/g;
 const PROJECT_RE = /\[project::\s*([^\]]*)\]/;
 const PROJECT_LINE_RE = /^%% project:\s*(.*?)\s*%%$/;
@@ -76,11 +76,11 @@ export function parse(text: string): Board {
 		const heading = line.match(/^##\s+(.*)$/);
 		if (heading) {
 			const raw = heading[1] ?? '';
-			const width = raw.match(WIDTH_RE)?.[1];
+			const width = [...raw.matchAll(WIDTH_RE)].pop()?.[1];
 			columns.push({
 				name: raw.replace(COLLAPSED, '').replace(WIDTH_RE, '').trim(),
 				collapsed: raw.includes(COLLAPSED),
-				width: width ? Number(width) : undefined,
+				width: width ? Math.round(Number(width)) : undefined,
 				cards: [],
 			});
 			card = null;

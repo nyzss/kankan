@@ -381,7 +381,7 @@ export class BoardView extends TextFileView {
 			const startX = e.clientX;
 			const startW = colEl.offsetWidth;
 			handle.onpointermove = (ev) => {
-				col.width = Math.min(800, Math.max(200, startW + ev.clientX - startX));
+				col.width = Math.min(800, Math.max(200, Math.round(startW + ev.clientX - startX)));
 				colEl.style.setProperty('--kankan-col-width', `${col.width}px`);
 			};
 			handle.onpointerup = () => {

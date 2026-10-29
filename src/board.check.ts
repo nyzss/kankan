@@ -28,6 +28,8 @@ assert(
 	'collapsed',
 );
 assert(b.columns[1]!.width === 320 && b.columns[0]!.width === undefined, 'width');
+const broken = parse('## In progress %% width: 413.06 %% %% width: 361.1 %%').columns[0]!;
+assert(broken.name === 'In progress' && broken.width === 361, 'fractional width');
 const c = b.columns[0]!.cards[0]!;
 assert(
 	c.title === 'Fix login' && c.tags.join() === 'work,urgent',
